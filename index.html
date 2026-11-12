@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oasis Voice Assistant</title>
+<style>
+:root{--bg:#e6edf1;--panel:#f7fafb;--ink:#17283b;--muted:#5b6b7a;--line:#c5d2da;--accent:#0e7c74;--live:#d9482b;--me:#d5e6e4}
+@media (prefers-color-scheme:dark){:root{--bg:#142230;--panel:#1c3042;--ink:#e8f0f4;--muted:#93a7b6;--line:#2f4759;--accent:#4fc3b8;--live:#ff7a5c;--me:#244a52}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font:16px/1.5 "Avenir Next","Segoe UI",system-ui,sans-serif;display:flex;justify-content:center}
+main{width:100%;max-width:680px;display:flex;flex-direction:column;height:100%;padding:16px}
+header{display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+h1{font-size:1.4rem;margin:0;letter-spacing:-.01em}
+button,input{font:inherit;color:inherit}
+.link{background:none;border:0;color:var(--accent);cursor:pointer;padding:4px;text-decoration:underline}
+#log{flex:1;overflow-y:auto;margin:12px 0;padding:4px 2px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:85%;padding:10px 14px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere}
+.me{align-self:flex-end;background:var(--me);border-bottom-right-radius:4px}
+.bot{align-self:flex-start;background:var(--panel);border:1px solid var(--line);border-bottom-left-radius:4px}
+.bot a{color:var(--accent)}
+#bar{display:flex;gap:10px;align-items:center}
+#text{flex:1;padding:12px 14px;border:1px solid var(--line);border-radius:999px;background:var(--panel);min-width:0}
+#mic{width:56px;height:56px;border-radius:50%;border:0;background:var(--accent);color:#fff;font-size:1.4rem;cursor:pointer;flex:none}
+#mic.on{background:var(--live);animation:pulse 1.1s ease-in-out infinite}
+@keyframes pulse{50%{box-shadow:0 0 0 10px rgba(217,72,43,.2)}}
+@media (prefers-reduced-motion:reduce){#mic.on{animation:none}}
+:focus-visible{outline:3px solid var(--accent);outline-offset:2px}
+#status{font-size:.85rem;color:var(--muted);min-height:1.3em;margin:6px 4px 0}
+dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:14px;max-width:520px;width:calc(100% - 32px)}
+dialog input{width:100%;padding:10px;margin:6px 0 12px;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
+dialog p{margin:6px 0;color:var(--muted);font-size:.92rem}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Oasis Voice Assistant</h1>
+    <button class="link" id="openSettings">Settings and privacy</button>
+  </header>
+  <div id="log" aria-live="polite"></div>
+  <div id="status"></div>
+  <div id="bar">
+    <input id="text" placeholder="Type a command, or press the mic" aria-label="Command">
+    <button id="mic" aria-label="Start listening">&#127908;</button>
+  </div>
+</main>
+
+<dialog id="settings">
+  <h2>Settings and privacy</h2>
+  <label for="key">OpenWeatherMap API key (for weather)</label>
+  <input id="key" placeholder="Paste your key" autocomplete="off">
+  <label for="voiceOn"><input type="checkbox" id="voiceOn" checked style="width:auto;margin-right:8px">Speak replies aloud</label>
+  <p><b>Privacy:</b> Speech recognition is done by your browser, and in Chrome and Edge the audio is sent to the browser vendor's speech service. This app has no server and stores nothing except your API key, custom commands and settings, which stay in this browser. Weather requests go to OpenWeatherMap and "who is" answers come from Wikipedia. Email opens your own mail app and is never sent by this page.</p>
+  <button class="link" id="clearData">Erase saved data</button>
+  <button class="link" id="closeSettings">Close</button>
+</dialog>
+
+<script>
+(function(){
+  var log=document.getElementById('log'),statusEl=document.getElementById('status'),
+      mic=document.getElementById('mic'),text=document.getElementById('text'),
+      dlg=document.getElementById('settings'),keyEl=document.getElementById('key'),voiceOn=document.getElementById('voiceOn');
+
+  function load(k,d){try{var v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}}
+  function save(k,v){try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}}
+  var custom=load('custom',{}); keyEl.value=load('owmKey','');voiceOn.checked=load('speak',true);
+
+  function add(who,msg,html){
+    var d=document.createElement('div');d.className='msg '+who;
+    if(html)d.innerHTML=msg;else d.textContent=msg;
+    log.appendChild(d);log.scrollTop=log.scrollHeight;return d;
+  }
+  function esc(s){return s.replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+  function say(msg,html){
+    add('bot',msg,html);
+    if(voiceOn.checked&&window.speechSynthesis){
+      var plain=html?msg.replace(/<[^>]+>/g,''):msg;
+      speechSynthesis.cancel();speechSynthesis.speak(new SpeechSynthesisUtterance(plain));
+    }
+  }
+
+  var jokes=["Why do programmers prefer dark mode? Because light attracts bugs.",
+    "I would tell you a UDP joke, but you might not get it.",
+    "There are 10 kinds of people: those who understand binary and those who don't."];
+  var sites={youtube:'https://www.youtube.com',google:'https://www.google.com',github:'https://github.com',wikipedia:'https://www.wikipedia.org'};
+
+  function help(){
+    say("Try:\n- what time is it / what's the date\n- weather in Delhi\n- who is Ada Lovelace / what is photosynthesis\n- remind me to stretch in 5 minutes\n- send email to a@b.com saying hello\n- open youtube / search for python tutorials\n- tell me a joke\n- when I say hi, say hello there");
+  }
+
+  function handle(raw){
+    var t=raw.trim(),l=t.toLowerCase().replace(/[.?!]+$/,'');
+    if(!l)return;
+    add('me',t);
+
+    if(custom[l]){say(custom[l]);return}
+
+    var m=l.match(/^when i say (.+?),? (?:say|reply) (.+)$/);
+    if(m){custom[m[1]]=m[2];save('custom',custom);say('Saved. When you say "'+m[1]+'", I will reply "'+m[2]+'".');return}
+
+    if(/\b(help|what can you do)\b/.test(l)){help();return}
+    if(/\bwhat('s| is) the time\b|\bwhat time is it\b|^time$/.test(l)){say('It is '+new Date().toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})+'.');return}
+    if(/\b(date|day) (is it|today)\b|\bwhat('s| is) the date\b|^date$/.test(l)){say('Today is '+new Date().toLocaleDateString([], {weekday:'long',year:'numeric',month:'long',day:'numeric'})+'.');return}
+    if(/\bjoke\b/.test(l)){say(jokes[Math.floor(Math.random()*jokes.length)]);return}
+
+    m=l.match(/^open (\w+)/);
+    if(m&&sites[m[1]]){say('Opening '+m[1]+'.');window.open(sites[m[1]],'_blank','noopener');return}
+
+    m=l.match(/^(?:search|google)(?: for)? (.+)$/);
+    if(m){say('Searching for '+m[1]+'.');window.open('https://www.google.com/search?q='+encodeURIComponent(m[1]),'_blank','noopener');return}
+
+    m=l.match(/^remind me to (.+?) in (\d+) (second|minute|hour)s?$/);
+    if(m){
+      var ms=+m[2]*{second:1e3,minute:6e4,hour:36e5}[m[3]];
+      say('OK, I will remind you to '+m[1]+' in '+m[2]+' '+m[3]+(m[2]=='1'?'':'s')+'. Keep this tab open.');
+      setTimeout(function(){say('Reminder: '+m[1]+'.')},ms);return;
+    }
+
+    m=l.match(/^(?:send )?e-?mail (?:to )?(\S+@\S+?)(?: (?:saying|about|with subject) (.+))?$/);
+    if(m){
+      var body=m[2]||'';
+      say('Opening your mail app with a draft to '+m[1]+'. Check it and press send yourself.');
+      window.location.href='mailto:'+encodeURIComponent(m[1]).replace('%40','@')+'?body='+encodeURIComponent(body);return;
+    }
+
+    m=l.match(/weather(?: in| for)? (.+)$/)||l.match(/^weather$/);
+    if(m){weather(m[1]);return}
+
+    m=l.match(/^(?:who|what) (?:is|was|are) (?:an? |the )?(.+)$/);
+    if(m){wiki(m[1]);return}
+
+    say("I didn't catch a command in that. Say \"help\" to see what I can do.");
+  }
+
+  function weather(city){
+    var key=load('owmKey','');
+    if(!key){say('I need an OpenWeatherMap API key first. Open Settings and privacy to add one.');return}
+    if(!city){say('Which city? Try "weather in Delhi".');return}
+    fetch('https://api.openweathermap.org/data/2.5/weather?units=metric&q='+encodeURIComponent(city)+'&appid='+encodeURIComponent(key))
+      .then(function(r){return r.json().then(function(j){return {ok:r.ok,j:j}})})
+      .then(function(x){
+        if(!x.ok){say(x.j.cod==401?'That API key was rejected. New keys can take a couple of hours to activate.':'I could not find weather for "'+city+'".');return}
+        say('In '+x.j.name+' it is '+Math.round(x.j.main.temp)+'°C with '+x.j.weather[0].description+', and it feels like '+Math.round(x.j.main.feels_like)+'°C.');
+      }).catch(function(){say('I could not reach the weather service. Check your connection and try again.')});
+  }
+
+  function wiki(topic){
+    fetch('https://en.wikipedia.org/api/rest_v1/page/summary/'+encodeURIComponent(topic.replace(/ /g,'_')))
+      .then(function(r){if(!r.ok)throw 0;return r.json()})
+      .then(function(j){
+        if(!j.extract){throw 0}
+        var short=j.extract.split('. ').slice(0,2).join('. ');if(!/[.!?]$/.test(short))short+='.';
+        say(esc(short)+'\n<a href="'+esc(j.content_urls.desktop.page)+'" target="_blank" rel="noopener">Read more on Wikipedia</a>',true);
+      }).catch(function(){say('I could not find an answer for "'+topic+'". Try a more specific name.')});
+  }
+
+  // Speech recognition
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition,rec=null,listening=false;
+  if(!SR){
+    mic.disabled=true;mic.title='Voice input is not supported in this browser';
+    statusEl.textContent='Voice input needs Chrome, Edge or Safari. You can still type commands.';
+  }else{
+    rec=new SR();rec.lang='en-US';rec.interimResults=true;rec.continuous=false;
+    rec.onstart=function(){listening=true;mic.classList.add('on');mic.setAttribute('aria-label','Stop listening');statusEl.textContent='Listening…'};
+    rec.onend=function(){listening=false;mic.classList.remove('on');mic.setAttribute('aria-label','Start listening');if(statusEl.textContent==='Listening…')statusEl.textContent=''};
+    rec.onerror=function(e){
+      statusEl.textContent=e.error==='not-allowed'?'Microphone access is blocked. Allow it in your browser settings.':
+        e.error==='no-speech'?'I did not hear anything. Press the mic and try again.':'Voice error: '+e.error;
+    };
+    rec.onresult=function(e){
+      var r=e.results[e.results.length-1];
+      statusEl.textContent=r[0].transcript;
+      if(r.isFinal){statusEl.textContent='';handle(r[0].transcript)}
+    };
+    mic.onclick=function(){if(listening)rec.stop();else{try{speechSynthesis.cancel();rec.start()}catch(e){}}};
+  }
+
+  text.addEventListener('keydown',function(e){if(e.key==='Enter'){handle(text.value);text.value=''}});
+  document.getElementById('openSettings').onclick=function(){dlg.showModal()};
+  document.getElementById('closeSettings').onclick=function(){save('owmKey',keyEl.value.trim());save('speak',voiceOn.checked);dlg.close()};
+  document.getElementById('clearData').onclick=function(){try{localStorage.clear()}catch(e){}custom={};keyEl.value='';say('Saved data erased.')};
+
+  say('Hi, I am your voice assistant. Press the mic and speak, or type below. Say "help" to see what I can do.');
+})();
+</script>
+</body>
+</html>
